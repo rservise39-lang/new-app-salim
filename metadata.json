@@ -1,0 +1,8 @@
+{
+  "name": "Remix صباغي - حساب أجور العمال وتكاليف المشاريع",
+  "description": "تطبيق صباغي المتكامل لإدارة أعمال الصباغة، حساب أجور العمال والسلف، وتكاليف ومساحات المشاريع وفواتير الزبائن بالدينار الجزائري.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
