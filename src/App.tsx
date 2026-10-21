@@ -16,18 +16,49 @@ import { PWAInstallModal } from './components/PWAInstallModal';
 import { OfflineIndicator } from './components/OfflineIndicator';
 
 const MainLayout: React.FC = () => {
-  const { activeTab, showPWAInstallModal, setShowPWAInstallModal } = useApp();
+
+const {
+  activeTab,
+  showPWAInstallModal,
+  setShowPWAInstallModal,
+  currentUser,
+  authReady,
+  setShowAuthModal
+} = useApp();
+
+React.useEffect(() => {
+  if (authReady) {
+    setShowAuthModal(!currentUser);
+  }
+}, [authReady, currentUser, setShowAuthModal]);
+
+if (!authReady) {
+  return (
+    <div
+      dir="rtl"
+      className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-700"
+    >
+      جارٍ التحقق من تسجيل الدخول...
+
+    </div>
+  );
+}
+
+if (!currentUser) {
+  return <AuthModal />;
+}
+
 
   return (
     <div className="min-h-screen bg-slate-50/70 text-slate-800 flex flex-col relative overflow-x-hidden">
       {/* Decorative Paint Flourishes in corners matching the Sabbaghi branding */}
-      <div 
+      <div
         className="fixed top-0 left-0 w-44 h-44 pointer-events-none opacity-40 z-0 bg-no-repeat bg-contain"
         style={{
           background: 'radial-gradient(circle at 0% 0%, #38BDF8 0%, #FBBF24 45%, transparent 70%)'
         }}
       />
-      <div 
+      <div
         className="fixed bottom-0 right-0 w-48 h-48 pointer-events-none opacity-30 z-0 bg-no-repeat bg-contain"
         style={{
           background: 'radial-gradient(circle at 100% 100%, #FBBF24 0%, #60A5FA 50%, transparent 75%)'
@@ -58,10 +89,11 @@ const MainLayout: React.FC = () => {
       <NewAdvanceModal />
       <InvoiceModal />
       <AuthModal />
-      <PWAInstallModal 
-        isOpen={showPWAInstallModal} 
-        onClose={() => setShowPWAInstallModal(false)} 
+      <PWAInstallModal
+        isOpen={showPWAInstallModal}
+        onClose={() => setShowPWAInstallModal(false)}
       />
+
     </div>
   );
 };

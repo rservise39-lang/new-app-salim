@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">صباغي</string>
+    <string name="title_activity_main">صباغي</string>
+    <string name="package_name">com.sabbaghi.app</string>
+    <string name="custom_url_scheme">com.sabbaghi.app</string>
+</resources>

@@ -36,6 +36,10 @@ export interface Project {
   otherExpensesCost: number; // مصاريف أخرى (دج)
   notes?: string;
   propertyType?: string; // 'شقة سكنية' | 'فيلا خاصة' | 'محل تجاري' | 'مكتب'
+  pricingType?: 'daily' | 'sqm' | 'fixed';
+  dailyRate?: number;
+  pricePerSqm?: number;
+
 }
 
 export interface Worker {
@@ -57,6 +61,13 @@ export interface AdvanceOrDeduction {
   amount: number; // دج
   date: string;
   reason: string;
+  // حقول اختيارية للتوافق مع البيانات القديمة (لها تاريخ لكن بلا علم «مسدّدة» ولا سجل صرف سابق).
+  // weekKey: مفتاح الأسبوع المشتق من التاريخ إن أمكن (مثال '2026-W42').
+  // settled: هل تمت تسوية هذه السلفة/الخصم ضمن صرف أسبوعي.
+  // settledAt: تاريخ التسوية إن وُجد.
+  weekKey?: string;
+  settled?: boolean;
+  settledAt?: string;
 }
 
 export interface WeeklyPayrollItem {
@@ -69,6 +80,39 @@ export interface WeeklyPayrollItem {
   isPaid: boolean;
   notes?: string;
 }
+
+// سجل صرف أسبوعي ثابت بعد التأكيد. لا يُعدّل بعد الإنشاء.
+export interface WeeklyPayoutItem {
+  workerId: string;
+  workerName: string;
+  dailyRate: number;
+  daysWorked: number;
+  grossWage: number;
+  advances: number; // مجموع السلف المسددة في هذا الصرف
+  deductions: number; // مجموع الخصومات المسددة في هذا الصرف
+  netPayout: number;
+}
+
+export interface WeeklyPayoutRecord {
+  id: string; // 'wp_' + weekKey
+  weekKey: string; // مثال '2026-W42'
+  weekLabel: string; // مثال 'من 19/10 إلى 25/10'
+  paidAt: string; // ISO timestamp
+  items: WeeklyPayoutItem[];
+  totalGross: number;
+  totalAdvances: number;
+  totalDeductions: number;
+  totalNet: number;
+  note?: string;
+}
+
+// حضور أسبوعي مفصول بحسب المشروع والأسبوع والعامل (شاشة الحضور بالمشروع).
+// البنية: projectId -> weekKey (تاريخ السبت YYYY-MM-DD) -> workerId -> [السبت..الخميس]
+// القيم: 1 (يوم كامل) | 0.5 (نصف يوم) | 0 (غياب).
+export type ProjectAttendance = Record<
+  string,
+  Record<string, Record<string, number[]>>
+>;
 
 export interface Client {
   id: string;

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { 
+import { ProjectAttendanceView } from './ProjectAttendanceView';
+import {
   Users, 
   Plus, 
   Calendar, 
@@ -24,28 +25,44 @@ export const WorkersView: React.FC = () => {
     advances,
     workerDaysThisWeek,
     setWorkerDays,
+    legacyWorkerDays,
+    assignLegacyDaysToWeek,
     addAdvanceOrDeduction,
     deleteAdvanceOrDeduction,
     setShowNewWorkerModal,
     setShowNewAdvanceModal,
     confirmWeeklyPayout,
     formatCurrency,
-    weeklySummary
+    weeklySummary,
+    workerDaysByWeek,
+    getWeekKeyForOffset,
+    getWeekRangeLabelForOffset,
+    isWeekPaid,
+    getPayoutForWeek,
+    unsettledAdvancesForWeek,
+    settleAdvance,
+    markAdvanceUnsettled,
+    weeklySummaryForWeek,
   } = useApp();
 
-  const [activeSubTab, setActiveSubTab] = useState<'payroll' | 'advances' | 'workersList'>('payroll');
+  const [activeSubTab, setActiveSubTab] = useState<
+    'payroll' | 'projectAttendance' | 'advances' | 'workersList'
+  >('payroll');
   const [currentWeekOffset, setCurrentWeekOffset] = useState(0);
 
-  // Helper date for current week in Algerian context
-  const getWeekRange = (offset: number) => {
-    const baseDate = new Date(2025, 7, 10); // Aug 10, 2025
-    baseDate.setDate(baseDate.getDate() + offset * 7);
-    const endDate = new Date(baseDate);
-    endDate.setDate(endDate.getDate() + 6);
+  // مفتاح الأسبوع الفعلي المختار (offset 0 = الأسبوع الحالي).
+  const currentWeekKey = getWeekKeyForOffset(currentWeekOffset);
+  const currentWeekLabel = getWeekRangeLabelForOffset(currentWeekOffset);
+  const weekPaid = isWeekPaid(currentWeekKey);
+  const payoutRecord = getPayoutForWeek(currentWeekKey);
+  const weekSummary = weeklySummaryForWeek(currentWeekKey);
+  const reviewableAdvances = unsettledAdvancesForWeek(currentWeekKey);
 
-    const format = (d: Date) => `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`;
-    return `من ${format(baseDate)} إلى ${format(endDate)}`;
-  };
+  // المرحلة الثانية المعدّلة: أيام الحضور القديمة غير محددة الأسبوع (للمراجعة).
+  // تُعرض فقط عند الأسبوع الحالي (offset 0) لأنها بلا تاريخ موثوق.
+  const legacyDays = currentWeekOffset === 0 ? legacyWorkerDays() : [];
+  const [showLegacyPicker, setShowLegacyPicker] = useState(false);
+  const [legacyPickOffset, setLegacyPickOffset] = useState(0);
 
   return (
     <div className="space-y-6 pb-24 max-w-4xl mx-auto px-4 pt-4">
@@ -80,20 +97,30 @@ export const WorkersView: React.FC = () => {
       </div>
 
       {/* Navigation Sub-Tabs (Clean Segmented Bar) */}
-      <div className="flex items-center p-1 bg-slate-100 rounded-2xl max-w-md">
+      <div className="flex items-center p-1 bg-slate-100 rounded-2xl max-w-xl overflow-x-auto">
         <button
           onClick={() => setActiveSubTab('payroll')}
-          className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all ${
+          className={`flex-1 py-2 px-2 text-xs font-bold rounded-xl transition-all whitespace-nowrap ${
             activeSubTab === 'payroll'
               ? 'bg-white text-blue-700 shadow-xs'
               : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          الحساب الأسبوعي للأجور
+          الحساب الأسبوعي
+        </button>
+        <button
+          onClick={() => setActiveSubTab('projectAttendance')}
+          className={`flex-1 py-2 px-2 text-xs font-bold rounded-xl transition-all whitespace-nowrap ${
+            activeSubTab === 'projectAttendance'
+              ? 'bg-white text-blue-700 shadow-xs'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          حضور المشاريع
         </button>
         <button
           onClick={() => setActiveSubTab('advances')}
-          className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all ${
+          className={`flex-1 py-2 px-2 text-xs font-bold rounded-xl transition-all whitespace-nowrap ${
             activeSubTab === 'advances'
               ? 'bg-white text-blue-700 shadow-xs'
               : 'text-slate-600 hover:text-slate-900'
@@ -103,7 +130,7 @@ export const WorkersView: React.FC = () => {
         </button>
         <button
           onClick={() => setActiveSubTab('workersList')}
-          className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all ${
+          className={`flex-1 py-2 px-2 text-xs font-bold rounded-xl transition-all whitespace-nowrap ${
             activeSubTab === 'workersList'
               ? 'bg-white text-blue-700 shadow-xs'
               : 'text-slate-600 hover:text-slate-900'
@@ -131,7 +158,7 @@ export const WorkersView: React.FC = () => {
               <span className="font-bold text-xs sm:text-sm text-slate-800">
                 {currentWeekOffset === 0 ? 'الأسبوع الحالي' : `أسبوع (${currentWeekOffset > 0 ? '+' : ''}${currentWeekOffset})`}
                 {' : '}
-                <span className="font-mono text-blue-700">{getWeekRange(currentWeekOffset)}</span>
+                <span className="font-mono text-blue-700">{currentWeekLabel}</span>
               </span>
             </div>
 
@@ -147,16 +174,31 @@ export const WorkersView: React.FC = () => {
           {/* Payroll Cards / Table */}
           <div className="space-y-3">
             {workers.map((worker) => {
-              const days = workerDaysThisWeek[worker.id] !== undefined ? workerDaysThisWeek[worker.id] : worker.daysAssignedThisWeek;
+              const weekDays = workerDaysByWeek[currentWeekKey] || {};
+              // المرحلة الثانية المعدّلة: الأيام من الأسبوع المختار فقط.
+              // لا fallback إلى workerDaysThisWeek (غير مؤكد) ولا إلى daysAssignedThisWeek
+              // (افتراض محاسبي). عامل بلا أيام مسجلة هذا الأسبوع = 0.
+              const days = weekDays[worker.id] !== undefined ? weekDays[worker.id] : 0;
               const gross = days * worker.dailyWage;
-              
-              // Calculate advances & deductions for this worker
+
+              // السلف والخصومات المرتبطة بهذا الأسبوع فقط (غير المسدّدة).
+              // القديمة بلا weekKey لا تُخصم هنا؛ تُعرض للمراجعة في الأسفل.
               const workerAdvances = advances
-                .filter(a => a.workerId === worker.id && a.type === 'سلفة')
+                .filter(a =>
+                  a.workerId === worker.id &&
+                  a.type === 'سلفة' &&
+                  a.settled !== true &&
+                  a.weekKey === currentWeekKey
+                )
                 .reduce((acc, a) => acc + a.amount, 0);
 
               const workerDeductions = advances
-                .filter(a => a.workerId === worker.id && a.type === 'خصم')
+                .filter(a =>
+                  a.workerId === worker.id &&
+                  a.type === 'خصم' &&
+                  a.settled !== true &&
+                  a.weekKey === currentWeekKey
+                )
                 .reduce((acc, a) => acc + a.amount, 0);
 
               const netWage = gross - workerAdvances - workerDeductions;
@@ -258,52 +300,199 @@ export const WorkersView: React.FC = () => {
                 ملخص الصرف الأسبوعي
               </span>
               <span className="text-xs bg-white/10 px-2.5 py-1 rounded-full text-slate-300 font-mono">
-                {weeklySummary.totalDaysWorked} يوم عمل مجمع
+                {weekSummary.totalDaysWorked} يوم عمل مجمع
               </span>
             </h3>
+
+            {weekPaid && payoutRecord && (
+              <div className="rounded-2xl bg-emerald-500/15 border border-emerald-400/30 px-4 py-3 text-emerald-200 text-xs flex items-center gap-2">
+                <Check className="w-4 h-4 text-emerald-400" />
+                <span>
+                  تم صرف أجور هذا الأسبوع في {new Date(payoutRecord.paidAt).toLocaleString('ar-DZ')}.
+                  الصافي المصروف: <strong className="font-mono">{formatCurrency(payoutRecord.totalNet)}</strong>.
+                </span>
+              </div>
+            )}
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs border-y border-white/10 py-3">
               <div>
                 <span className="text-slate-400 block text-[11px]">إجمالي الأجور المستحقة</span>
                 <span className="font-bold text-base font-mono text-white mt-1 block">
-                  {formatCurrency(weeklySummary.totalGrossWage)}
+                  {formatCurrency(weekSummary.totalGrossWage)}
                 </span>
               </div>
               <div>
                 <span className="text-amber-400 block text-[11px]">إجمالي السلف (-)</span>
                 <span className="font-bold text-base font-mono text-amber-300 mt-1 block">
-                  {formatCurrency(weeklySummary.totalAdvances)}
+                  {formatCurrency(weekSummary.totalAdvances)}
                 </span>
               </div>
               <div>
                 <span className="text-rose-400 block text-[11px]">إجمالي الخصومات (-)</span>
                 <span className="font-bold text-base font-mono text-rose-300 mt-1 block">
-                  {formatCurrency(weeklySummary.totalDeductions)}
+                  {formatCurrency(weekSummary.totalDeductions)}
                 </span>
               </div>
               <div>
                 <span className="text-emerald-400 block text-[11px]">الصافي الواجب صرفه</span>
                 <span className="font-black text-lg font-mono text-emerald-300 mt-1 block">
-                  {formatCurrency(weeklySummary.totalNetPayout)}
+                  {formatCurrency(weekSummary.totalNetPayout)}
                 </span>
               </div>
             </div>
 
+            {/* مراجعة السلف القديمة غير المؤكدة (لها تاريخ لكن بلا علم «مسدّدة»).
+                المرحلة الثانية المعدّلة: هذه السلف لن تُخصم تلقائيًا في الصرف؛ تسوية أو حذف فقط. */}
+            {reviewableAdvances.length > 0 && (
+              <div className="rounded-2xl bg-amber-500/10 border border-amber-400/30 px-4 py-3 space-y-2">
+                <p className="text-amber-200 text-xs font-bold flex items-center gap-1.5">
+                  <AlertCircle className="w-4 h-4" />
+                  سلف/خصومات قديمة للمراجعة ({reviewableAdvances.length})
+                </p>
+                <p className="text-amber-200/80 text-[11px] leading-5">
+                  هذه بنود بلا أسبوع محدد؛ لن تُخصم تلقائيًا. علّمها «مسدّدة» إن كانت قد صُرفت، أو احذفها إن كانت خاطئة. لخصمها أعِد إدخالها بتاريخ فيُسنَد لها أسبوع تلقائيًا.
+                </p>
+                <div className="space-y-2 pt-1">
+                  {reviewableAdvances.map((item) => (
+                    <div key={item.id} className="flex items-center justify-between gap-2 bg-white/5 rounded-xl px-3 py-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <strong className="text-xs text-white truncate">{item.workerName}</strong>
+                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
+                            item.type === 'سلفة' ? 'bg-amber-500/20 text-amber-300' : 'bg-rose-500/20 text-rose-300'
+                          }`}>
+                            {item.type}
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-slate-400 mt-0.5 truncate">
+                          {item.reason || 'بدون سبب'} • {item.date}
+                        </div>
+                      </div>
+                      <span className="font-mono font-bold text-white text-xs shrink-0">
+                        {formatCurrency(item.amount)}
+                      </span>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          onClick={() => settleAdvance(item.id)}
+                          title="تعليم كمسدّدة (لا تُخصم)"
+                          className="text-[10px] font-bold px-2 py-1 rounded-lg bg-slate-600/40 hover:bg-slate-600/70 text-white transition-colors"
+                        >
+                          مسدّدة
+                        </button>
+                        <button
+                          onClick={() => deleteAdvanceOrDeduction(item.id)}
+                          title="حذف البند (بتأكيد)"
+                          className="p-1 text-slate-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-lg transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* المرحلة الثانية المعدّلة: حضور قديم غير محدد الأسبوع — نقل يدوي فقط.
+                يظهر هذا القسم فقط عند الأسبوع الحالي (offset 0) وعند وجود أيام قديمة > 0. */}
+            {legacyDays.filter(ld => ld.days > 0).length > 0 && (
+              <div className="rounded-2xl bg-orange-500/10 border border-orange-400/30 px-4 py-3 space-y-2">
+                <p className="text-orange-200 text-xs font-bold flex items-center gap-1.5">
+                  <AlertCircle className="w-4 h-4" />
+                  حضور قديم غير محدد الأسبوع — للمراجعة
+                </p>
+                <p className="text-orange-200/80 text-[11px] leading-5">
+                  أيام حضور محفوظة قبل تفعيل النظام الأسبوعي؛ لا تاريخ موثوقًا يحدد أسبوعها. لن تدخل الحساب تلقائيًا. انقر «نقل» لإسنادها يدويًا إلى الأسبوع الصحيح.
+                </p>
+                <div className="space-y-1.5 pt-1">
+                  {legacyDays.filter(ld => ld.days > 0).map(({ workerId, days }) => {
+                    const worker = workers.find(w => w.id === workerId);
+                    if (!worker) return null;
+                    return (
+                      <div key={workerId} className="flex items-center justify-between gap-2 bg-white/5 rounded-xl px-3 py-2">
+                        <div className="flex-1 min-w-0">
+                          <strong className="text-xs text-white truncate">{worker.name}</strong>
+                          <div className="text-[10px] text-slate-400 mt-0.5">{days} يوم</div>
+                        </div>
+                        <button
+                          onClick={() => setShowLegacyPicker(true)}
+                          className="text-[10px] font-bold px-2 py-1 rounded-lg bg-blue-600/40 hover:bg-blue-600/70 text-white transition-colors shrink-0"
+                        >
+                          نقل إلى أسبوع
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* منتقي الأسبوع للنقل اليدوي */}
+                {showLegacyPicker && (
+                  <div className="mt-2 p-3 bg-white/5 rounded-xl border border-orange-300/20 space-y-2">
+                    <p className="text-orange-100 text-[11px] font-bold">اختر الأسبوع الصحيح لنقل الأيام إليه:</p>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setLegacyPickOffset(prev => prev - 1)}
+                        className="p-1 rounded-lg hover:bg-white/10 text-white"
+                        title="أسبوع سابق"
+                      >
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
+                      <span className="flex-1 text-center text-[11px] text-white font-mono">
+                        {getWeekRangeLabelForOffset(legacyPickOffset)}
+                      </span>
+                      <button
+                        onClick={() => setLegacyPickOffset(prev => prev + 1)}
+                        className="p-1 rounded-lg hover:bg-white/10 text-white"
+                        title="أسبوع قادم"
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-2 justify-end pt-1">
+                      <button
+                        onClick={() => setShowLegacyPicker(false)}
+                        className="text-[10px] font-bold px-3 py-1.5 rounded-lg bg-slate-600/40 hover:bg-slate-600/70 text-white transition-colors"
+                      >
+                        إلغاء
+                      </button>
+                      <button
+                        onClick={() => {
+                          const targetKey = getWeekKeyForOffset(legacyPickOffset);
+                          assignLegacyDaysToWeek(targetKey);
+                          setShowLegacyPicker(false);
+                          setLegacyPickOffset(0);
+                        }}
+                        className="text-[10px] font-bold px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition-colors"
+                      >
+                        تأكيد النقل إلى {getWeekRangeLabelForOffset(legacyPickOffset)}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-1">
               <p className="text-xs text-slate-300">
-                تأكيد الصرف يقوم بتسجيل الدفعة وتصفية المستحقات للأسبوع الجاري.
+                {weekPaid
+                  ? 'تم صرف هذا الأسبوع. التنقل بين الأسابيع لا يغيّر السجلات السابقة.'
+                  : 'تأكيد الصرف يقوم بتسجيل الدفعة وتصفية المستحقات للأسبوع الجاري.'}
               </p>
               <button
-                onClick={confirmWeeklyPayout}
-                className="w-full sm:w-auto px-6 py-3 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black text-sm rounded-xl shadow-md transition-all active:scale-95 flex items-center justify-center gap-2"
+                onClick={() => confirmWeeklyPayout(currentWeekKey, currentWeekLabel)}
+                disabled={weekPaid || workers.length === 0}
+                className="w-full sm:w-auto px-6 py-3 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black text-sm rounded-xl shadow-md transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-emerald-500"
               >
                 <Check className="w-4 h-4 stroke-[3]" />
-                <span>تأكيد صرف الأجور للعمال</span>
+                <span>{weekPaid ? 'تم صرف هذا الأسبوع' : 'تأكيد صرف الأجور للعمال'}</span>
               </button>
             </div>
           </div>
         </div>
       )}
+
+      {/* VIEW: PROJECT ATTENDANCE TABLE */}
+      {activeSubTab === 'projectAttendance' && <ProjectAttendanceView />}
 
       {/* VIEW 2: ADVANCES & DEDUCTIONS MANAGEMENT */}
       {activeSubTab === 'advances' && (

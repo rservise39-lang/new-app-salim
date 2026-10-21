@@ -6,3 +6,12 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Local backups and generated development output
+dev-dist/
+backups/
+*.bak
+*.bak-*
+*.before-manual-repayment-*
+src/context/AppContext.tsx.backup
+src/backupData.tsx
